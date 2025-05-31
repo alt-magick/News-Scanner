@@ -12,11 +12,11 @@ new posts.<br>
 
 <pre>
 Usage:
-nntp.exe <server> <username> <password> clear [group]
-nntp.exe <server> <username> <password> list <newsgroup> [number]
-nntp.exe <server> <username> <password> read <newsgroup> <article_number> [output_file]
-nntp.exe <server> <username> <password> search <newsgroup> <term> <count> [output_file]
-nntp.exe <server> <username> <password> help
+nntp.exe server username password clear [group]
+nntp.exe server username password list newsgroup [number]
+nntp.exe server username password read newsgroup article_number [output_file]
+nntp.exe server username password search newsgroup term count [output_file]
+nntp.exe server username password help
 </pre>
 
 
