@@ -10,13 +10,12 @@ that run the program again with the argument 'clear'. The next time you
 run the program after that, it will list all of the newsgroups that have 
 new posts.<br>
 
-<pre>
-Usage:
-nntp.exe server username password clear [group]
-nntp.exe server username password list newsgroup [number]
-nntp.exe server username password read newsgroup article_number [output_file]
-nntp.exe server username password search newsgroup term count [output_file]
-nntp.exe server username password help
-</pre>
+
+Usage:<br>
+nntp.exe server username password clear [group]<br>
+nntp.exe server username password list newsgroup [number]<br>
+nntp.exe server username password read newsgroup article_number [output_file]<br>
+nntp.exe server username password search newsgroup term count [output_file]<br>
+nntp.exe server username password help<br>
 
 
