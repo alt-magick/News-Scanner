@@ -79,9 +79,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Usage:\n";
         std::cerr << "  " << argv[0] << " <server> <username> <password> clear [group]\n";
         std::cerr << "  " << argv[0] << " <server> <username> <password> list <newsgroup> [number]\n";
-        std::cerr << "  " << argv[0] << " <server> <username> <password> read <newsgroup> <article_number> [output_file]\n";
+        std::cerr << "  " << argv[0] << " <server> <username> <password> read <newsgroup> <article_number>\n";
         std::cerr << "  " << argv[0] << " <server> <username> <password> search <newsgroup> <term> <count> [output_file]\n";
-        std::cerr << "  " << argv[0] << " <server> <username> <password> help\n";
         return 1;
     }
 
@@ -241,7 +240,7 @@ int main(int argc, char* argv[]) {
     }
     else if (command == "read") {
         if (argc < 7) {
-            std::cerr << "Usage: " << argv[0] << " <server> <username> <password> read <newsgroup> <article_number> [output_file]\n";
+            std::cerr << "Usage: " << argv[0] << " <server> <username> <password> read <newsgroup> <article_number>\n";
             closesocket(sock);
 #if defined(_WIN32)
             WSACleanup();
@@ -250,7 +249,6 @@ int main(int argc, char* argv[]) {
         }
         std::string targetGroup = argv[5];
         std::string articleNumber = argv[6];
-        std::string outputFile = (argc > 7) ? argv[7] : "";
 
         sendCommand(sock, "GROUP " + targetGroup);
         std::string groupResponse = receiveLine(sock);
@@ -280,37 +278,11 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::ofstream outFile;
-        if (!outputFile.empty()) {
-            outFile.open(outputFile);
-            if (!outFile) {
-                std::cerr << "Failed to open output file.\n";
-                sendCommand(sock, "QUIT");
-                receiveLine(sock);
-                closesocket(sock);
-#if defined(_WIN32)
-                WSACleanup();
-#endif
-                return 1;
-            }
-        }
-
         std::string line;
         while (true) {
             line = receiveLine(sock);
             if (line == ".") break;
-
-            if (outFile.is_open()) {
-                outFile << line << "\n";
-            }
-            else {
-                std::cout << line << "\n";
-            }
-        }
-
-        if (outFile.is_open()) {
-            outFile.close();
-            std::cout << "Article saved to " << outputFile << "\n";
+            std::cout << line << "\n";
         }
 
         sendCommand(sock, "QUIT");
@@ -332,7 +304,7 @@ int main(int argc, char* argv[]) {
         }
         std::string targetGroup = argv[5];
         std::string searchTerm = argv[6];
-        int maxResults = std::stoi(argv[7]);
+        int maxCount = std::stoi(argv[7]);
         std::string outputFile = (argc > 8) ? argv[8] : "";
 
         sendCommand(sock, "GROUP " + targetGroup);
@@ -349,11 +321,11 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        sendCommand(sock, "XOVER 1-" + std::to_string(INT32_MAX)); // Request overview of all articles
+        sendCommand(sock, "XOVER");
         std::string xoverResponse = receiveLine(sock);
 
         if (xoverResponse.substr(0, 3) != "224") {
-            std::cerr << "XOVER command failed.\n";
+            std::cerr << "Failed to get overview data.\n";
             sendCommand(sock, "QUIT");
             receiveLine(sock);
             closesocket(sock);
@@ -363,35 +335,10 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        std::vector<std::string> lines;
-        receiveMultiline(sock, lines);
+        std::vector<std::string> overviewLines;
+        receiveMultiline(sock, overviewLines);
 
-        std::vector<std::pair<int, std::string>> found; // article number, subject
-
-        for (const auto& line : lines) {
-            // Overview format: article-number<TAB>subject<TAB>from<TAB>date<TAB>message-id<TAB>references<TAB>bytes<TAB>lines
-            std::istringstream iss(line);
-            std::string artNumStr, subject, from, date, msgid, refs, bytes, linesStr;
-            if (!std::getline(iss, artNumStr, '\t')) continue;
-            if (!std::getline(iss, subject, '\t')) continue;
-            if (!std::getline(iss, from, '\t')) continue;
-            if (!std::getline(iss, date, '\t')) continue;
-            if (!std::getline(iss, msgid, '\t')) continue;
-            if (!std::getline(iss, refs, '\t')) continue;
-            if (!std::getline(iss, bytes, '\t')) continue;
-            if (!std::getline(iss, linesStr, '\t')) continue;
-
-            std::string lowerSubject = subject;
-            std::string lowerTerm = searchTerm;
-            std::transform(lowerSubject.begin(), lowerSubject.end(), lowerSubject.begin(), ::tolower);
-            std::transform(lowerTerm.begin(), lowerTerm.end(), lowerTerm.begin(), ::tolower);
-
-            if (lowerSubject.find(lowerTerm) != std::string::npos) {
-                found.emplace_back(std::stoi(artNumStr), subject);
-                if ((int)found.size() >= maxResults) break;
-            }
-        }
-
+        int foundCount = 0;
         std::ofstream outFile;
         if (!outputFile.empty()) {
             outFile.open(outputFile);
@@ -407,20 +354,15 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        for (const auto& item : found) {
-            std::string outputLine = "#" + std::to_string(item.first) + ": " + item.second;
-            if (outFile.is_open()) {
-                outFile << outputLine << "\n";
-            }
-            else {
-                std::cout << outputLine << "\n";
+        for (const auto& line : overviewLines) {
+            if (line.find(searchTerm) != std::string::npos) {
+                std::cout << line << "\n";
+                if (outFile.is_open()) outFile << line << "\n";
+                if (++foundCount >= maxCount) break;
             }
         }
 
-        if (outFile.is_open()) {
-            outFile.close();
-            std::cout << "Search results saved to " << outputFile << "\n";
-        }
+        if (outFile.is_open()) outFile.close();
 
         sendCommand(sock, "QUIT");
         receiveLine(sock);
@@ -431,58 +373,78 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     else if (command == "clear") {
-        StateMap state = loadState(STATE_FILE);
-        if (argc > 5) {
-            std::string groupToClear = argv[5];
-            auto it = state.find(groupToClear);
-            if (it != state.end()) {
-                state.erase(it);
-                std::cout << "Cleared state for group: " << groupToClear << "\n";
+        if (argc == 5) {
+            // No group provided — behave like clear
+            sendCommand(sock, "LIST");
+            std::string listResponse = receiveLine(sock);
+            std::cout << listResponse << "\n";
+
+            if (listResponse.size() < 3 || listResponse.substr(0, 3) != "215") {
+                std::cerr << "Failed to get newsgroup list.\n";
+                sendCommand(sock, "QUIT");
+                receiveLine(sock);
+                closesocket(sock);
+#if defined(_WIN32)
+                WSACleanup();
+#endif
+                return 1;
+            }
+
+            std::vector<std::string> groups;
+            receiveMultiline(sock, groups);
+
+            StateMap newState;
+            for (const auto& entry : groups) {
+                std::istringstream iss(entry);
+                std::string group;
+                int last = 0, first = 0;
+                if (!(iss >> group >> last >> first)) continue;
+                newState[group] = last;
+            }
+
+            saveState(newState, STATE_FILE);
+            std::cout << "State updated for all groups in " << STATE_FILE << "\n";
+
+            sendCommand(sock, "QUIT");
+            receiveLine(sock);
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 0;
+        }
+        else if (argc >= 6) {
+            // Group provided — update only that group
+            std::string group = argv[5];
+            sendCommand(sock, "GROUP " + group);
+            std::string groupResponse = receiveLine(sock);
+
+            std::istringstream iss(groupResponse);
+            std::string status;
+            int count = 0, firstArticle = 0, lastArticle = 0;
+            std::string groupName;
+
+            if (!(iss >> status >> count >> firstArticle >> lastArticle >> groupName) || status != "211") {
+                std::cerr << "Failed to get group info.\n";
             }
             else {
-                std::cout << "No stored state found for group: " << groupToClear << "\n";
+                StateMap state = loadState(STATE_FILE);
+                state[group] = lastArticle;
+                saveState(state, STATE_FILE);
+                std::cout << "Updated state for " << group << " to last article " << lastArticle << "\n";
             }
-        }
-        else {
-            state.clear();
-            std::cout << "Cleared all stored state.\n";
-        }
-        saveState(state, STATE_FILE);
 
-        sendCommand(sock, "QUIT");
-        receiveLine(sock);
-        closesocket(sock);
+            sendCommand(sock, "QUIT");
+            receiveLine(sock);
+            closesocket(sock);
 #if defined(_WIN32)
-        WSACleanup();
+            WSACleanup();
 #endif
-        return 0;
-    }
-    else if (command == "help") {
-        std::cout << "Available commands:\n";
-        std::cout << "  clear [group]                     : Clear stored state (all or specific group)\n";
-        std::cout << "  list <newsgroup> [number]        : List recent articles in a newsgroup\n";
-        std::cout << "  read <newsgroup> <article> [file]: Read a specific article, optionally save to file\n";
-        std::cout << "  search <newsgroup> <term> <count> [file]: Search articles by term, optionally save results\n";
-        std::cout << "  help                             : Show this help message\n";
-        std::cout << "\nUsage examples:\n";
-        std::cout << "  " << argv[0] << " <server> <username> <password> clear\n";
-        std::cout << "  " << argv[0] << " <server> <username> <password> list comp.lang.c++ 10\n";
-        std::cout << "  " << argv[0] << " <server> <username> <password> read comp.lang.c++ 12345 article.txt\n";
-        std::cout << "  " << argv[0] << " <server> <username> <password> search comp.lang.c++ threading 5\n";
-        std::cout << std::endl;
-
-        sendCommand(sock, "QUIT");
-        receiveLine(sock);
-        closesocket(sock);
-#if defined(_WIN32)
-        WSACleanup();
-#endif
-        return 0;
+            return 0;
+        }
     }
     else {
         std::cerr << "Unknown command: " << command << "\n";
-        std::cerr << "Use 'help' command to see available options.\n";
-
         sendCommand(sock, "QUIT");
         receiveLine(sock);
         closesocket(sock);
@@ -491,13 +453,4 @@ int main(int argc, char* argv[]) {
 #endif
         return 1;
     }
-
-    // Should not reach here
-    sendCommand(sock, "QUIT");
-    receiveLine(sock);
-    closesocket(sock);
-#if defined(_WIN32)
-    WSACleanup();
-#endif
-    return 0;
 }
