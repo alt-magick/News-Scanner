@@ -8,8 +8,9 @@ This program will scan every newsgroup on your server for new
 articles. The first time you run it, it will list every newsgroup. After 
 that run the program again with the argument 'clear'. The next time you 
 run the program after that, it will list all of the newsgroups that have 
-new posts.
+new posts.<br>
 
+<pre>
 Usage:<br>
 
 nntp.exe <server> <username> <password> clear [group]<br>
@@ -29,5 +30,6 @@ nntp.exe <server> <username> <password> help<br>
 This prints the commands<br>
 
 If you run the program without any arguments it prints all of the groups with new posts<br>
+</pre>
 
 
