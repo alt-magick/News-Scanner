@@ -28,6 +28,6 @@ This prints out all the posts contains a search term in the article author or su
 nntp.exe <server> <username> <password> help<br>
 This prints the commands<br>
 
-Ifyou run the program without any arguments it prints all of the groups with new posts<br>
+If you run the program without any arguments it prints all of the groups with new posts<br>
 
 
