@@ -13,7 +13,7 @@ new posts.<br>
 
 Usage:<br>
 nntp.exe server username password clear [group]<br>
-This marks all groups as read or optionally on group<br>
+This marks all groups as read or optionally one group<br>
 
 nntp.exe server username password list newsgroup [number]<br>
 This lists the newest posts on a group<br>
