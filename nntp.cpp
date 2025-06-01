@@ -75,6 +75,7 @@ void saveState(const StateMap& state, const std::string& filename) {
 }
 
 int main(int argc, char* argv[]) {
+
     if (argc < 4) {
         std::cerr << "Usage:\n";
         std::cerr << "  " << argv[0] << " <server> <username> <password> clear [group]\n";
@@ -279,10 +280,16 @@ int main(int argc, char* argv[]) {
         }
 
         std::string line;
+	std::ofstream out;
+
+	if (argc > 7) out.open(argv[7]);
+
         while (true) {
             line = receiveLine(sock);
             if (line == ".") break;
             std::cout << line << "\n";
+	    if (out) out << line << "\n";
+		
         }
 
         sendCommand(sock, "QUIT");
@@ -374,7 +381,7 @@ int main(int argc, char* argv[]) {
     }
     else if (command == "clear") {
         if (argc == 5) {
-            // No group provided — behave like clear
+            // No group provided ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ behave like clear
             sendCommand(sock, "LIST");
             std::string listResponse = receiveLine(sock);
             std::cout << listResponse << "\n";
@@ -414,7 +421,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else if (argc >= 6) {
-            // Group provided — update only that group
+            // Group provided ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ update only that group
             std::string group = argv[5];
             sendCommand(sock, "GROUP " + group);
             std::string groupResponse = receiveLine(sock);
@@ -443,6 +450,153 @@ int main(int argc, char* argv[]) {
             return 0;
         }
     }
+else if (command == "reset"){
+	int result = std::remove("nntp_state.txt");
+
+	if (result == 0) {
+	    std::cout << "Reset.\n";
+	} else {
+    	    std::perror("Failed to reset groups.");
+	}
+}
+else if (command == "searchall") {
+
+        // We expect: <server> <user> <pass> searhall <searchTerm> <num>
+        if (argc < 7) {
+            std::cerr << "Usage: " << argv[0] << " <server> <username> <password> searchall <searchTerm> <num>\n";
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 1;
+        }
+
+        std::string searchTerm = argv[5];
+        int numToCheck = 0;
+        try {
+            numToCheck = std::stoi(argv[6]);
+        }
+        catch (const std::invalid_argument&) {
+            std::cerr << "Invalid number for article count: " << argv[6] << "\n";
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 1;
+        }
+        catch (const std::out_of_range&) {
+            std::cerr << "Number too large: " << argv[6] << "\n";
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 1;
+        }
+        if (numToCheck <= 0) {
+            std::cerr << "Please specify a positive number of articles to check.\n";
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 1;
+        }
+
+        // Load previous state
+        StateMap previousState = loadState(STATE_FILE);
+        StateMap newState;
+
+        // Get all groups
+        sendCommand(sock, "LIST");
+        std::string listResponse = receiveLine(sock);
+        if (listResponse.substr(0, 3) != "215") {
+            std::cerr << "Failed to get group list.\n";
+            sendCommand(sock, "QUIT");
+            receiveLine(sock);
+            closesocket(sock);
+#if defined(_WIN32)
+            WSACleanup();
+#endif
+            return 1;
+        }
+
+        std::vector<std::string> groups;
+        receiveMultiline(sock, groups);
+
+        for (const auto& groupLine : groups) {
+            std::istringstream iss(groupLine);
+            std::string group;
+            int last = 0, first = 0;
+            if (!(iss >> group >> last >> first)) continue;
+
+            int lastSeen = previousState.count(group) ? previousState[group] : first - 1;
+
+            if (last > lastSeen) {
+                std::cout << "Group: " << group << " has new articles (" << (last - lastSeen) << ")\n";
+
+                // Search up to numToCheck latest articles in the group
+                sendCommand(sock, "GROUP " + group);
+                std::string groupResponse = receiveLine(sock);
+                if (groupResponse.substr(0, 3) != "211") {
+                    std::cerr << "Failed to enter group " << group << "\n";
+                    continue;
+                }
+
+                std::istringstream grIss(groupResponse);
+                std::string status;
+                int estCount = 0, firstArt = 0, lastArt = 0;
+                std::string grpName;
+                grIss >> status >> estCount >> firstArt >> lastArt >> grpName;
+
+                int startArticle = std::max(lastArt - numToCheck + 1, firstArt);
+
+                for (int artNum = lastArt; artNum >= startArticle; --artNum) {
+                    sendCommand(sock, "HEAD " + std::to_string(artNum));
+                    std::string headResp = receiveLine(sock);
+                    if (headResp.substr(0, 3) != "221") continue;
+
+                    std::vector<std::string> headers;
+                    receiveMultiline(sock, headers);
+
+                    std::string subject, from;
+                    for (const auto& line : headers) {
+                        if (line.find("Subject: ") == 0) subject = line.substr(9);
+                        else if (line.find("From: ") == 0) from = line.substr(6);
+                    }
+
+                    // case-insensitive search
+                    std::string subjLower = subject;
+                    std::transform(subjLower.begin(), subjLower.end(), subjLower.begin(), ::tolower);
+                    std::string fromLower = from;
+                    std::transform(fromLower.begin(), fromLower.end(), fromLower.begin(), ::tolower);
+                    std::string searchLower = searchTerm;
+                    std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(), ::tolower);
+
+                    if (subjLower.find(searchLower) != std::string::npos || fromLower.find(searchLower) != std::string::npos) {
+                        std::cout << "Match in group " << group << ", article #" << artNum << ": " << subject << " | Author: " << from << "\n";
+
+if (argc > 7) {
+    std::ofstream searchout(argv[7], std::ios::app); // Open in append mode
+    searchout << "Match in group " << group << ", article #" << artNum << ": " << subject << " | Author: " << from << "\n";
+    searchout.close();
+}
+                    }
+                }
+            }
+            // Save last seen article number (whether new or not)
+            newState[group] = last;
+        }
+
+        saveState(newState, STATE_FILE);
+
+        sendCommand(sock, "QUIT");
+        receiveLine(sock);
+        closesocket(sock);
+#if defined(_WIN32)
+        WSACleanup();
+#endif
+        return 0;
+    }
+
     else {
         std::cerr << "Unknown command: " << command << "\n";
         sendCommand(sock, "QUIT");
